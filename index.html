@@ -1,0 +1,389 @@
+<!doctype html>
+<html lang="ru">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="description" content="mini-figma — лёгкий редактор векторных фигур в браузере: рисование перетаскиванием, панели свойств, undo/redo и горячие клавиши." />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect x='3' y='3' width='11' height='11' rx='3' fill='%2338bdf8'/%3E%3Crect x='18' y='3' width='11' height='11' rx='3' fill='%23f472b6'/%3E%3Crect x='3' y='18' width='11' height='11' rx='3' fill='%23facc15'/%3E%3Crect x='18' y='18' width='11' height='11' rx='6' fill='%23a3e635'/%3E%3C/svg%3E" />
+    <title>mini-figma — коллаборативный холст для фигур</title>
+    <style>
+      :root {
+        --bg: #171717;           /* наш канвас: neutral-900 */
+        --panel: #262626;        /* neutral-800 */
+        --panel-soft: rgba(38, 38, 38, 0.4);
+        --line: #333333;
+        --text: #f5f5f5;         /* neutral-100 */
+        --muted: #a3a3a3;        /* neutral-400 */
+        --dim: #737373;          /* neutral-500 */
+        --accent: #38bdf8;       /* sky-400 — DEFAULT_SHAPE_FILL */
+        --accent-deep: #0284c7;  /* sky-600 */
+        --pink: #f472b6;
+        --lime: #a3e635;
+        --yellow: #facc15;
+        --rose: #fb7185;
+        --violet: #a78bfa;
+      }
+      * { box-sizing: border-box; margin: 0; padding: 0; }
+      html { scroll-behavior: smooth; }
+      body { background: var(--bg); color: var(--text); font-family: 'Segoe UI', system-ui, -apple-system, sans-serif; line-height: 1.55; }
+      section, header, footer { padding: 0 5vw; }
+      a { color: inherit; text-decoration: none; }
+
+      /* ── Кнопки: два вида, радиус 8px — как в шапке Figma ── */
+      .btn {
+        display: inline-block; border-radius: 8px; padding: 12px 22px;
+        font-size: 16px; font-weight: 400; cursor: pointer; border: 1px solid transparent;
+        transition: background .15s ease, border-color .15s ease;
+      }
+      .btn-solid { background: var(--accent-deep); color: #fff; }
+      .btn-solid:hover { background: #0369a1; }
+      .btn-black { background: #0b0b0b; color: #fff; border-color: #4a4a4a; }
+      .btn-black:hover { border-color: var(--accent); }
+      .btn-outline { background: transparent; color: var(--text); border-color: #404040; }
+      .btn-outline:hover { border-color: var(--accent); }
+      .btn-lg { font-size: 18px; padding: 14px 26px; }
+
+      /* ── Шапка ── */
+      .topbar {
+        position: sticky; top: 0; z-index: 50; display: flex; align-items: center; gap: 28px;
+        padding: 14px 5vw; background: rgba(23, 23, 23, 0.92); backdrop-filter: blur(6px);
+        border-bottom: 1px solid var(--line);
+      }
+      .logo { display: flex; align-items: center; gap: 10px; font-weight: 600; letter-spacing: -0.4px; }
+      .logo-mark { display: flex; gap: 3px; }
+      .logo-mark i { width: 14px; height: 14px; border-radius: 4px; display: block; }
+      .topnav { display: flex; gap: 22px; font-size: 15px; color: var(--muted); }
+      .topnav a:hover { color: var(--text); }
+      .top-actions { margin-left: auto; display: flex; gap: 10px; align-items: center; }
+      .top-actions .ghostlink { color: var(--muted); font-size: 15px; }
+      .top-actions .ghostlink:hover { color: var(--text); }
+
+      /* ── Баннер события (аналог Config India) ── */
+      .eventbar {
+        display: flex; align-items: center; gap: 18px; padding: 12px 5vw;
+        background: #2d2440; border-bottom: 1px solid var(--line);
+        font-size: 14px; color: #e6e0f5; position: relative;
+      }
+      .eventbar b { letter-spacing: 2px; text-transform: uppercase; font-size: 13px; color: var(--violet); }
+      .eventbar .x { margin-left: 26px; color: #9191a5; cursor: pointer; border: 0; background: none; font-size: 20px; line-height: 1; }
+
+      /* ── Типографика: огромный тонкий заголовок ── */
+      .h-giant { font-size: clamp(40px, 7vw, 72px); font-weight: 400; letter-spacing: -1.5px; line-height: 1.08; }
+      .h-big { font-size: clamp(28px, 4vw, 40px); font-weight: 400; letter-spacing: -0.8px; }
+      p.sub { color: var(--muted); font-size: 18px; margin-top: 12px; max-width: 560px; }
+
+      /* ── Герой с точечной сеткой (наш канвас) ── */
+      .hero { padding: 90px 5vw 70px; position: relative; overflow: hidden;
+        background-image: radial-gradient(circle, #3a3a3a 1px, transparent 1px);
+        background-size: 24px 24px; }
+      .hero .cta { display: flex; gap: 12px; margin-top: 26px; flex-wrap: wrap; }
+      .cursor-float { position: absolute; right: 16vw; top: 44%; filter: drop-shadow(0 6px 14px rgba(0,0,0,.5)); animation: drift 7s ease-in-out infinite alternate; }
+      @keyframes drift { from { transform: translate(0,0) rotate(-6deg); } to { transform: translate(-26px, 30px) rotate(8deg); } }
+
+      .grid3 { display: grid; grid-template-columns: repeat(auto-fit, minmax(230px, 1fr)); gap: 16px; margin-top: 30px; }
+      .card { background: var(--panel-soft); border: 1px solid var(--line); border-radius: 12px; padding: 22px; }
+      .card h3 { font-size: 17px; font-weight: 600; letter-spacing: -0.3px; }
+      .card p { color: var(--muted); font-size: 14px; margin-top: 6px; }
+      .card a.more { display: inline-block; margin-top: 14px; color: var(--accent); font-size: 14px; text-decoration: underline; text-underline-offset: 3px; }
+
+      /* ── Сцены: мок-редактор внутри цветных блоков ── */
+      .scene { border-radius: 14px; padding: 28px; position: relative; overflow: hidden; min-height: 320px;
+        display: flex; align-items: center; justify-content: center; }
+      .scene-mint { background: #12332e; }
+      .scene-violet { background: #251f38; }
+      .scene-rose { background: #361e28; }
+
+      .mock-editor { width: min(500px, 92%); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; overflow: hidden; box-shadow: 0 20px 50px rgba(0,0,0,.45); }
+      .mock-titlebar { display: flex; gap: 6px; padding: 8px 10px; border-bottom: 1px solid var(--line); }
+      .mock-titlebar i { width: 10px; height: 10px; border-radius: 3px; display: block; }
+      .mock-body { display: flex; min-height: 220px; }
+      .mock-toolbar { width: 40px; border-right: 1px solid var(--line); display: flex; flex-direction: column; gap: 8px; padding: 10px 0; align-items: center; }
+      .mock-toolbar i { width: 20px; height: 20px; border-radius: 5px; border: 1.5px solid var(--muted); }
+      .mock-toolbar i.on { background: var(--accent-deep); border-color: var(--accent); }
+      .mock-canvas { flex: 1; position: relative; background-image: radial-gradient(circle, #3a3a3a 1px, transparent 1px); background-size: 18px 18px; }
+      .shape-rect { position: absolute; left: 38px; top: 46px; width: 120px; height: 64px; background: var(--accent); border-radius: 4px; }
+      .shape-handle { position: absolute; width: 8px; height: 8px; background: #fff; border: 1.5px solid var(--accent-deep); }
+      .shape-circle { position: absolute; right: 40px; top: 90px; width: 74px; height: 74px; background: var(--yellow); border-radius: 50%; }
+      .mock-panels { width: 122px; border-left: 1px solid var(--line); padding: 10px; display: flex; flex-direction: column; gap: 10px; }
+      .mock-panels b { font-size: 9px; color: var(--dim); text-transform: uppercase; letter-spacing: 1px; }
+      .mock-panels .row { height: 10px; border-radius: 3px; background: #3a3a3a; }
+
+      .prompt-pill { display: flex; align-items: center; gap: 16px; width: min(440px, 86%); background: var(--bg); border: 1px solid var(--line); border-radius: 10px; padding: 16px 20px; font-size: 17px; color: #8fbfcf; }
+      .prompt-pill .arrow { width: 30px; height: 30px; border: 2px solid #79c7d8; border-radius: 50%; display: grid; place-items: center; color: #79c7d8; flex: none; }
+
+      .mock-site { width: min(440px, 88%); background: #fff; color: #0b0b0b; border-radius: 6px; padding: 26px; box-shadow: 0 20px 50px rgba(0,0,0,.45); }
+      .mock-site .t1 { font-size: 30px; letter-spacing: -1px; font-weight: 400; }
+      .mock-site .t2 { font-size: 20px; margin-top: 10px; color: #444; }
+      .mock-site .t3 { font-size: 14px; margin-top: 10px; color: #777; }
+      .mock-site .t4 { font-size: 11px; margin-top: 10px; color: #aaa; }
+
+      .proof { padding: 70px 5vw; }
+      .brandrow { display: flex; flex-wrap: wrap; gap: 14px 38px; margin-top: 26px; align-items: center; }
+      .brandrow span { color: var(--dim); font-size: 19px; letter-spacing: 1px; font-weight: 600; opacity: .75; }
+
+      .cta-block { text-align: center; padding: 90px 5vw; border-top: 1px solid var(--line); }
+
+      .cases { padding: 55px 5vw; border-top: 1px solid var(--line); }
+      .chips { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 22px; }
+      .chip { border: 1px solid var(--line); color: var(--muted); border-radius: 999px; padding: 8px 16px; font-size: 14px; cursor: pointer; background: none; }
+      .chip:hover, .chip.on { border-color: var(--accent); color: var(--text); }
+
+      .dl-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 16px; margin-top: 26px; }
+      .dl-card { border: 1px solid var(--line); border-radius: 12px; overflow: hidden; background: var(--panel-soft); }
+      .dl-card .art { height: 110px; }
+      .dl-card .body { padding: 16px; }
+      .dl-card h3 { font-size: 15px; }
+      .dl-card a { display: inline-block; margin-top: 6px; text-decoration: underline; text-underline-offset: 3px; color: var(--text); font-size: 14px; }
+      .dl-card a:hover { color: var(--accent); }
+      .art-mint { background: linear-gradient(135deg, #0f3b45, var(--accent)); }
+      .art-violet { background: linear-gradient(135deg, #251f38, var(--violet)); }
+      .art-rose { background: linear-gradient(135deg, #361e28, var(--rose)); }
+
+      footer { border-top: 1px solid var(--line); padding: 44px 5vw 60px; }
+      .fgrid { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 24px; }
+      .fgrid h4 { font-size: 11px; text-transform: uppercase; letter-spacing: 1.4px; color: var(--dim); margin-bottom: 12px; }
+      .fgrid ul { list-style: none; }
+      .fgrid a { display: block; color: var(--muted); font-size: 13.5px; margin-bottom: 7px; }
+      .fgrid a:hover { color: var(--text); }
+      .baseline { display: flex; justify-content: space-between; gap: 20px; margin-top: 40px; color: var(--dim); font-size: 12.5px; flex-wrap: wrap; }
+
+      @media (max-width: 760px) { .topnav { display: none; } .brandrow span { font-size: 15px; } }
+    </style>
+  </head>
+  <body>
+
+    <div class="eventbar">
+      <b>Мини-Конфиг</b>
+      <span>Смотрите демо виртуально 15 октября — бесплатно.</span>
+      <a class="btn btn-black" href="#editor" style="padding: 8px 18px; font-size: 14px;">Участвовать</a>
+      <button class="x" title="Закрыть">✕</button>
+    </div>
+
+    <header class="topbar">
+      <a class="logo" href="#">
+        <span class="logo-mark">
+          <i style="background: var(--accent)"></i>
+          <i style="background: var(--pink)"></i>
+          <i style="background: var(--yellow)"></i>
+        </span>
+        mini-figma
+      </a>
+      <nav class="topnav">
+        <a href="#products">Продукт</a>
+        <a href="#features">Возможности</a>
+        <a href="#cases">Сценарии</a>
+        <a href="#download">Скачать</a>
+        <a href="#community">Сообщество</a>
+      </nav>
+      <div class="top-actions">
+        <a class="ghostlink" href="#">Войти</a>
+        <a class="btn btn-outline" href="#">Связаться</a>
+        <a class="btn btn-black" id="editor" href="https://tarnuevvlad-arch.github.io/mini-figma/" target="_blank">Начать бесплатно</a>
+      </div>
+    </header>
+
+    <section class="hero">
+      <h1 class="h-giant">Полноценный холст<br />для векторных фигур</h1>
+      <p class="sub">Быстро двигайтесь в нужном направлении: редактор, в котором рисование, история и панели работают как в большом редакторе — только проще и целиком в браузере.</p>
+      <div class="cta">
+        <a class="btn btn-solid btn-lg" href="https://tarnuevvlad-arch.github.io/mini-figma/" target="_blank">Открыть редактор</a>
+        <a class="btn btn-outline btn-lg" href="#download">Скачать приложение</a>
+      </div>
+
+      <svg class="cursor-float" width="64" height="64" viewBox="0 0 64 64">
+        <defs><filter id="w"><feDropShadow dx="0" dy="2" stdDeviation="2.4" flood-color="#000" flood-opacity="0.5"/></filter></defs>
+        <path d="M14 8 L 50 36 L 32 40 L 42 58 L 34 62 L 24 44 L 14 54 Z" fill="#0b0b0b" stroke="#fff" stroke-width="4" filter="url(#w)"/>
+      </svg>
+    </section>
+
+    <section id="products" style="padding-top: 20px; padding-bottom: 60px;">
+      <h2 class="h-big">Одно рабочее место —<br />весь рабочий процесс</h2>
+      <div class="grid3">
+        <div class="card">
+          <h3>Холст и фигуры</h3>
+          <p>Прямоугольники и эллипсы перетаскиванием, масштаб 10%–400%, точечная сетка — как в большом редакторе.</p>
+          <a class="more" href="https://tarnuevvlad-arch.github.io/mini-figma/" target="_blank">Попробовать →</a>
+        </div>
+        <div class="card">
+          <h3>Панели справа</h3>
+          <p>Свойства и слои: позиция, размеры, заливка цветом — меняется на ходу, каждая смена — шаг истории.</p>
+          <a class="more" href="https://github.com/tarnuevvlad-arch/mini-figma" target="_blank">Как устроено →</a>
+        </div>
+        <div class="card">
+          <h3>Горячие клавиши</h3>
+          <p>R — прямоугольник, O — эллипс, V — выбор. Ctrl+Z / Ctrl+Shift+Z — до 100 шагов истории на весь драг.</p>
+          <a class="more" href="https://github.com/tarnuevvlad-arch/mini-figma#readme" target="_blank">Список клавиш →</a>
+        </div>
+      </div>
+    </section>
+
+    <section id="features" style="padding-bottom: 70px;">
+      <h2 class="h-big">Выразительно. С точностью до пикселя.</h2>
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(290px, 1fr)); gap: 16px; margin-top: 26px;">
+
+        <div class="scene scene-mint">
+          <div class="mock-editor">
+            <div class="mock-titlebar">
+              <i style="background: var(--accent)"></i><i style="background: var(--pink)"></i><i style="background: var(--yellow)"></i>
+            </div>
+            <div class="mock-body">
+              <div class="mock-toolbar"><i class="on"></i><i></i><i></i></div>
+              <div class="mock-canvas">
+                <div class="shape-rect"></div>
+                <div class="shape-handle" style="left: 34px; top: 42px;"></div>
+                <div class="shape-handle" style="left: 154px; top: 106px;"></div>
+                <div class="shape-circle"></div>
+              </div>
+              <div class="mock-panels">
+                <b>Свойства</b>
+                <div class="row"></div><div class="row" style="width: 75%"></div>
+                <b>Слои</b>
+                <div class="row" style="background: var(--accent)"></div>
+                <div class="row"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="scene scene-violet">
+          <div class="prompt-pill">
+            <span class="arrow">→</span>
+            Search readme files
+          </div>
+        </div>
+
+        <div class="scene scene-rose">
+          <div class="mock-site">
+            <div class="t1">Texture values</div>
+            <div class="t2">Ровнее, чем вы привыкли</div>
+            <div class="t3">Форма, палитра и история — основа интерфейса</div>
+            <div class="t4">и всё это — перетаскивается</div>
+          </div>
+        </div>
+
+      </div>
+    </section>
+
+    <section style="padding-bottom: 70px;">
+      <h2 class="h-big">Начните с контекста фигур.<br />Стройте последовательно.</h2>
+      <p class="sub">Константы инструментов и палитры живут в одном файле <code style="font-size: 13px; background: var(--panel); padding: 2px 7px; border-radius: 5px;">src/constants</code> — правка одной строки, и весь интерфейс слушается.</p>
+    </section>
+
+    <section class="proof" id="community">
+      <h2 class="h-big">Фигуры, которые вы любите, нарисованы в mini-figma</h2>
+      <div class="brandrow">
+        <span>Гараж №7</span>
+        <span>Пекарня</span>
+        <span>Кофе 12</span>
+        <span>Красная строка</span>
+        <span>Ноль → Один</span>
+        <span>Тёплая лампа</span>
+      </div>
+    </section>
+
+    <section class="cta-block">
+      <h2 class="h-giant" style="font-size: clamp(32px, 5vw, 52px)">Идеи больше не ждут<br />своей очереди</h2>
+      <div style="margin-top: 24px">
+        <a class="btn btn-solid btn-lg" href="https://tarnuevvlad-arch.github.io/mini-figma/" target="_blank">Начать бесплатно</a>
+      </div>
+    </section>
+
+    <section class="cases" id="cases">
+      <h2 class="h-big">Что рисуют в mini-figma</h2>
+      <div class="chips">
+        <button class="chip on">UI-киты</button>
+        <button class="chip">Веб-сайты</button>
+        <button class="chip">Соц-сети</button>
+        <button class="chip">Мобильные приложения</button>
+        <button class="chip">Презентации</button>
+        <button class="chip">Вайрфреймы</button>
+        <button class="chip">Иконки</button>
+        <button class="chip">Портфолио</button>
+        <button class="chip">Постеры</button>
+      </div>
+    </section>
+
+    <section id="download" style="padding-bottom: 70px;">
+      <h2 class="h-big">mini-figma downloads</h2>
+      <div class="dl-grid">
+        <div class="dl-card">
+          <div class="art art-mint"></div>
+          <div class="body">
+            <h3>Редактор в браузере</h3>
+            <a href="https://tarnuevvlad-arch.github.io/mini-figma/" target="_blank">Открыть сейчас</a>
+          </div>
+        </div>
+        <div class="dl-card">
+          <div class="art art-violet"></div>
+          <div class="body">
+            <h3>Исходный код</h3>
+            <a href="https://github.com/tarnuevvlad-arch/mini-figma" target="_blank">Репозиторий GitHub</a>
+            <a href="https://github.com/tarnuevvlad-arch/mini-figma#readme" target="_blank">Список горячих клавиш</a>
+          </div>
+        </div>
+        <div class="dl-card">
+          <div class="art art-rose"></div>
+          <div class="body">
+            <h3>Запуск локально</h3>
+            <a href="https://github.com/tarnuevvlad-arch/mini-figma#запуск" target="_blank">Инструкция (npm run dev)</a>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <footer>
+      <div class="fgrid">
+        <div>
+          <h4>Продукт</h4>
+          <ul>
+            <li><a href="https://tarnuevvlad-arch.github.io/mini-figma/">Редактор</a></li>
+            <li><a href="#features">Возможности</a></li>
+            <li><a href="#cases">Сценарии</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Тарифы</h4>
+          <ul>
+            <li><a href="#">Free — всегда</a></li>
+            <li><a href="#">Домашнее облако</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Ресурсы</h4>
+          <ul>
+            <li><a href="https://github.com/tarnuevvlad-arch/mini-figma" target="_blank">GitHub</a></li>
+            <li><a href="https://github.com/tarnuevvlad-arch/mini-figma#readme" target="_blank">README</a></li>
+            <li><a href="#download">Скачивание</a></li>
+          </ul>
+        </div>
+        <div>
+          <h4>Компания</h4>
+          <ul>
+            <li><a href="#community">Сообщество</a></li>
+            <li><a href="#">Блог мини</a></li>
+          </ul>
+        </div>
+      </div>
+      <div class="baseline">
+        <span>© 2026 mini-figma — учебный проект</span>
+        <span>Структура — по мотивам figma.com · дизайн — Mini Figma (тёмный холст)</span>
+      </div>
+    </footer>
+
+    <script>
+      // 1) Закрываемый баннер события — крестик прячет плашку до конца сессии.
+      document.querySelector('.eventbar .x').addEventListener('click', function () {
+        this.closest('.eventbar').style.display = 'none';
+      });
+
+      // 2) Чипы-сценарии: активный подсвечен, клик переключает (визуальный фильтр).
+      document.querySelectorAll('.chip').forEach(function (chip) {
+        chip.addEventListener('click', function () {
+          document.querySelectorAll('.chip').forEach(function (c) { c.classList.remove('on'); });
+          chip.classList.add('on');
+        });
+      });
+    </script>
+
+  </body>
+</html>
